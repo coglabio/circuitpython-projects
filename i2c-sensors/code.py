@@ -1,29 +1,38 @@
 import time
 import board
 import busio
+import digitalio
 import adafruit_bme680
 import adafruit_vl6180x
 import cedargrove_nau7802
 import usb_cdc
 import microcontroller
 import json
+from adafruit_hx711.hx711 import HX711
+from adafruit_hx711.analog_in import AnalogIn
 
 serial = usb_cdc.console
 
 # Initialize I2C bus and sensors
-i2c = busio.I2C(board.SCL, board.SDA)
+# i2c = busio.I2C(board.SCL, board.SDA)
+
+data = digitalio.DigitalInOut(board.SDA)
+data.direction = digitalio.Direction.INPUT
+clock = digitalio.DigitalInOut(board.SCL)
+clock.direction = digitalio.Direction.OUTPUT
 
 # Initialize sensors individually and track which ones are available
 available_sensors = {
     'bme680': False,
     'vl6180x': False,
-    'nau7802': False
+    'nau7802': False,
+    'hx711': False
 }
 
 # Initialize BME680 sensor (temperature, humidity, pressure, gas)
 bme680 = None
 try:
-    bme680 = adafruit_bme680.Adafruit_BME680_I2C(i2c)
+    bme680 = adafruit_bme680.Adafruit_BME680_I2C(data,clock)
     available_sensors['bme680'] = True
     serial.write(f'BME680 sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
@@ -32,7 +41,7 @@ except Exception as e:
 # Initialize VL6180X sensor (distance, light)
 vl6180x = None
 try:
-    vl6180x = adafruit_vl6180x.VL6180X(i2c)
+    vl6180x = adafruit_vl6180x.VL6180X(data, clock)
     available_sensors['vl6180x'] = True
     serial.write(f'VL6180X sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
@@ -41,7 +50,7 @@ except Exception as e:
 # Initialize NAU7802 ADC (weight)
 nau7802 = None
 try:
-    nau7802 = cedargrove_nau7802.NAU7802(i2c)
+    nau7802 = cedargrove_nau7802.NAU7802(data, clock)
     # Enable channel 1 for weight readings
     nau7802.channel = 1
     nau7802.gain = 128  # High gain for small load cells
@@ -49,6 +58,21 @@ try:
     serial.write(f'NAU7802 sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
     serial.write(f'NAU7802 sensor not available: {str(e)}\r\n'.encode('utf-8'))
+
+# Initialize HX711 load cell ADC
+hx711 = None
+channel_a = None
+try:
+    # Set up HX711 pins - using direct digital pins, not I2C
+
+    
+    # Initialize HX711 with direct pin connections
+    hx711 = HX711(data, clock)
+    channel_a = AnalogIn(hx711, HX711.CHAN_A_GAIN_128)
+    available_sensors['hx711'] = True
+    serial.write(f'HX711 sensor detected\r\n'.encode('utf-8'))
+except Exception as e:
+    serial.write(f'HX711 sensor not available: {str(e)}\r\n'.encode('utf-8'))
 
 id = ""
 def read_identifier():
@@ -84,6 +108,13 @@ def read_until(terminator=b'\r'):  # Change this to any character you want
             if char == terminator:  # Stop at the defined termination character
                 return buffer
             buffer += char  # Append character to the buffer
+
+def convert_signed_24bit(value):
+    """Convert a 24-bit unsigned value to signed."""
+    value &= 0xFFFFFF  # Mask to 24 bits
+    if value & 0x800000:  # If the sign bit (MSB in 24-bit) is set
+        value -= 0x1000000  # Convert to negative using two's complement
+    return value
 
 id = read_identifier()
 
@@ -202,6 +233,24 @@ while True:
                         sensor_index += 1
                 except Exception as e:
                     serial.write(f'Error reading NAU7802: {str(e)}\r\n'.encode('utf-8'))
+                    
+            # Only read HX711 ADC if available
+            if available_sensors['hx711'] and channel_a is not None:
+                try:
+                    
+                    raw_value = channel_a.value
+                    signed_value = convert_signed_24bit(raw_value)
+                    
+                    # Add HX711 data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
+                        'type': 'Weight',
+                        'value': signed_value,
+                        'unit': 'raw'
+                    }
+                    sensor_index += 1
+                except Exception as e:
+                    serial.write(f'Error reading HX711: {str(e)}\r\n'.encode('utf-8'))
             serial.write(f'{json.dumps(response)}\r\n'.encode('utf-8'))
         elif command == 'setid':
             if args:
