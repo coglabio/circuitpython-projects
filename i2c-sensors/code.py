@@ -13,20 +13,42 @@ serial = usb_cdc.console
 # Initialize I2C bus and sensors
 i2c = busio.I2C(board.SCL, board.SDA)
 
+# Initialize sensors individually and track which ones are available
+available_sensors = {
+    'bme680': False,
+    'vl6180x': False,
+    'nau7802': False
+}
+
+# Initialize BME680 sensor (temperature, humidity, pressure, gas)
+bme680 = None
 try:
-    # Initialize BME680 sensor
     bme680 = adafruit_bme680.Adafruit_BME680_I2C(i2c)
-    # Initialize VL6180X sensor
+    available_sensors['bme680'] = True
+    serial.write(f'BME680 sensor detected\r\n'.encode('utf-8'))
+except Exception as e:
+    serial.write(f'BME680 sensor not available: {str(e)}\r\n'.encode('utf-8'))
+
+# Initialize VL6180X sensor (distance, light)
+vl6180x = None
+try:
     vl6180x = adafruit_vl6180x.VL6180X(i2c)
-    # Initialize NAU7802 ADC
+    available_sensors['vl6180x'] = True
+    serial.write(f'VL6180X sensor detected\r\n'.encode('utf-8'))
+except Exception as e:
+    serial.write(f'VL6180X sensor not available: {str(e)}\r\n'.encode('utf-8'))
+
+# Initialize NAU7802 ADC (weight)
+nau7802 = None
+try:
     nau7802 = cedargrove_nau7802.NAU7802(i2c)
     # Enable channel 1 for weight readings
     nau7802.channel = 1
     nau7802.gain = 128  # High gain for small load cells
-    sensors_ok = True
+    available_sensors['nau7802'] = True
+    serial.write(f'NAU7802 sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
-    serial.write(f'Error initializing sensors: {str(e)}\r\n'.encode('utf-8'))
-    sensors_ok = False
+    serial.write(f'NAU7802 sensor not available: {str(e)}\r\n'.encode('utf-8'))
 
 id = ""
 def read_identifier():
@@ -76,72 +98,110 @@ while True:
         # print(f"Received command: {command}")
 
         if command == '?':
-            # Read BME680 sensor
-            temp = bme680.temperature
-            humidity = bme680.relative_humidity
-            pressure = bme680.pressure
-            gas = bme680.gas
-
-            # Read VL6180X sensor
-            range_mm = vl6180x.range
-            lux = vl6180x.read_lux(adafruit_vl6180x.ALS_GAIN_1)
-
-            # Read NAU7802 ADC (average of 5 readings)
-            weight_sum = 0
-            samples = 5
-            for _ in range(samples):
-                if nau7802.available:
-                    weight_sum += nau7802.read()
-                    time.sleep(0.01)  # Short delay between readings
-            weight_raw = weight_sum / samples
-
             response = {
                 'id': id,
-                'data': {
-                    'sensor_0': {
-                        'index': 0,
+                'data': {}
+            }
+            
+            sensor_index = 0
+            
+            # Only read BME680 sensor if available
+            if available_sensors['bme680'] and bme680 is not None:
+                try:
+                    temp = bme680.temperature
+                    humidity = bme680.relative_humidity
+                    pressure = bme680.pressure
+                    gas = bme680.gas
+                    
+                    # Add temperature data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Temperature',
                         'value': round(temp, 2),
                         'unit': 'C'
-                    },
-                    'sensor_1': {
-                        'index': 1,
+                    }
+                    sensor_index += 1
+                    
+                    # Add humidity data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Humidity',
                         'value': round(humidity, 2),
                         'unit': '%'
-                    },
-                    'sensor_2': {
-                        'index': 2,
+                    }
+                    sensor_index += 1
+                    
+                    # Add pressure data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Pressure',
                         'value': round(pressure, 2),
                         'unit': 'hPa'
-                    },
-                    'sensor_3': {
-                        'index': 3,
+                    }
+                    sensor_index += 1
+                    
+                    # Add gas data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Gas',
                         'value': round(gas, 2),
                         'unit': 'Ω'
-                    },
-                    'sensor_4': {
-                        'index': 4,
+                    }
+                    sensor_index += 1
+                except Exception as e:
+                    serial.write(f'Error reading BME680: {str(e)}\r\n'.encode('utf-8'))
+
+            # Only read VL6180X sensor if available
+            if available_sensors['vl6180x'] and vl6180x is not None:
+                try:
+                    range_mm = vl6180x.range
+                    lux = vl6180x.read_lux(adafruit_vl6180x.ALS_GAIN_1)
+                    
+                    # Add distance data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Distance',
                         'value': range_mm,
                         'unit': 'mm'
-                    },
-                    'sensor_5': {
-                        'index': 5,
+                    }
+                    sensor_index += 1
+                    
+                    # Add light data
+                    response['data'][f'sensor_{sensor_index}'] = {
+                        'index': sensor_index,
                         'type': 'Light',
                         'value': round(lux, 2),
                         'unit': 'lux'
-                    },
-                    'sensor_6': {
-                        'index': 6,
-                        'type': 'ADC',
-                        'value': round(weight_raw, 2),
-                        'unit': 'raw'
                     }
-                }
-            }
+                    sensor_index += 1
+                except Exception as e:
+                    serial.write(f'Error reading VL6180X: {str(e)}\r\n'.encode('utf-8'))
+
+            # Only read NAU7802 ADC if available
+            if available_sensors['nau7802'] and nau7802 is not None:
+                try:
+                    # Average of 5 readings
+                    weight_sum = 0
+                    samples = 5
+                    samples_read = 0
+                    for _ in range(samples):
+                        if nau7802.available:
+                            weight_sum += nau7802.read()
+                            samples_read += 1
+                            time.sleep(0.01)  # Short delay between readings
+                    
+                    if samples_read > 0:
+                        weight_raw = weight_sum / samples_read
+                        # Add ADC data
+                        response['data'][f'sensor_{sensor_index}'] = {
+                            'index': sensor_index,
+                            'type': 'ADC',
+                            'value': round(weight_raw, 2),
+                            'unit': 'raw'
+                        }
+                        sensor_index += 1
+                except Exception as e:
+                    serial.write(f'Error reading NAU7802: {str(e)}\r\n'.encode('utf-8'))
             serial.write(f'{json.dumps(response)}\r\n'.encode('utf-8'))
         elif command == 'setid':
             if args:
