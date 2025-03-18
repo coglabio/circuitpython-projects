@@ -14,12 +14,9 @@ from adafruit_hx711.analog_in import AnalogIn
 serial = usb_cdc.console
 
 # Initialize I2C bus and sensors
-# i2c = busio.I2C(board.SCL, board.SDA)
-
-data = digitalio.DigitalInOut(board.SDA)
-data.direction = digitalio.Direction.INPUT
-clock = digitalio.DigitalInOut(board.SCL)
-clock.direction = digitalio.Direction.OUTPUT
+sda = board.SDA
+scl = board.SCL
+i2c = None
 
 # Initialize sensors individually and track which ones are available
 available_sensors = {
@@ -32,7 +29,9 @@ available_sensors = {
 # Initialize BME680 sensor (temperature, humidity, pressure, gas)
 bme680 = None
 try:
-    bme680 = adafruit_bme680.Adafruit_BME680_I2C(data,clock)
+    if i2c is None:
+        i2c = i2c = busio.I2C(scl, sda)
+    bme680 = adafruit_bme680.Adafruit_BME680_I2C(i2c)
     available_sensors['bme680'] = True
     serial.write(f'BME680 sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
@@ -41,7 +40,9 @@ except Exception as e:
 # Initialize VL6180X sensor (distance, light)
 vl6180x = None
 try:
-    vl6180x = adafruit_vl6180x.VL6180X(data, clock)
+    if i2c is None:
+        i2c = i2c = busio.I2C(scl, sda)
+    vl6180x = adafruit_vl6180x.VL6180X(i2c)
     available_sensors['vl6180x'] = True
     serial.write(f'VL6180X sensor detected\r\n'.encode('utf-8'))
 except Exception as e:
@@ -50,7 +51,9 @@ except Exception as e:
 # Initialize NAU7802 ADC (weight)
 nau7802 = None
 try:
-    nau7802 = cedargrove_nau7802.NAU7802(data, clock)
+    if i2c is None:
+        i2c = i2c = busio.I2C(scl, sda)
+    nau7802 = cedargrove_nau7802.NAU7802(i2c)
     # Enable channel 1 for weight readings
     nau7802.channel = 1
     nau7802.gain = 128  # High gain for small load cells
@@ -64,6 +67,10 @@ hx711 = None
 channel_a = None
 try:
     # Set up HX711 pins - using direct digital pins, not I2C
+    data = digitalio.DigitalInOut(sda)
+    data.direction = digitalio.Direction.INPUT
+    clock = digitalio.DigitalInOut(scl)
+    clock.direction = digitalio.Direction.OUTPUT
 
     
     # Initialize HX711 with direct pin connections
