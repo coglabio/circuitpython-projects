@@ -20,25 +20,13 @@ nau_min_value = None
 nau_max_value = None
 
 def generate_uuid4():
-    # Get 16 random bytes
-    random_bytes = bytearray(os.urandom(16))
+    b = bytearray(os.urandom(16))
+    b[6] = (b[6] & 0x0F) | 0x40  # UUIDv4
+    b[8] = (b[8] & 0x3F) | 0x80  # Variant
 
-    # Set version to 4 => xxxx => 0100
-    random_bytes[6] = (random_bytes[6] & 0x0F) | 0x40
-
-    # Set variant to RFC 4122 => 10xx
-    random_bytes[8] = (random_bytes[8] & 0x3F) | 0x80
-
-    # Format into UUID string
-    uuid_str = (
-        f"{random_bytes[0]:02x}{random_bytes[1]:02x}{random_bytes[2]:02x}{random_bytes[3]:02x}-"
-        f"{random_bytes[4]:02x}{random_bytes[5]:02x}-"
-        f"{random_bytes[6]:02x}{random_bytes[7]:02x}-"
-        f"{random_bytes[8]:02x}{random_bytes[9]:02x}-"
-        f"{random_bytes[10]:02x}{random_bytes[11]:02x}{random_bytes[12]:02x}"
-        f"{random_bytes[13]:02x}{random_bytes[14]:02x}{random_bytes[15]:02x}"
+    uuid_str = '{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}'.format(
+        *b
     )
-
     return uuid_str
 
 # Initialize variables
@@ -81,7 +69,6 @@ def write_identifier(identifier):
     if len(identifier) > 36:
         return False
     try:
-        id = identifier
         # Convert string to bytes and pad with zeros
         id_bytes = identifier.encode('utf-8')
         padded = id_bytes + bytes([0] * (36 - len(id_bytes)))
@@ -181,6 +168,9 @@ while True:
                         sensor_index += 1
                 except Exception as e:
                     serial.write(f'error reading NAU7802 - {str(e)}\r\n'.encode('utf-8'))
+
+            # Send the response back over serial
+            serial.write(f'{json.dumps(response)}\r\n'.encode('utf-8'))
 
         elif command == 'setid':
             if args:
