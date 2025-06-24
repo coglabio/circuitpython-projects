@@ -32,14 +32,14 @@ def generate_uuid4():
     random_bytes[8] = (random_bytes[8] & 0x3F) | 0x80
 
     # Format into UUID string
-    uuid_str = (
-        f"{random_bytes[0]:02x}{random_bytes[1]:02x}{random_bytes[2]:02x}{random_bytes[3]:02x}-"
-        f"{random_bytes[4]:02x}{random_bytes[5]:02x}-"
-        f"{random_bytes[6]:02x}{random_bytes[7]:02x}-"
-        f"{random_bytes[8]:02x}{random_bytes[9]:02x}-"
-        f"{random_bytes[10]:02x}{random_bytes[11]:02x}{random_bytes[12]:02x}"
+    uuid_str = ''.join([
+        f"{random_bytes[0]:02x}{random_bytes[1]:02x}{random_bytes[2]:02x}{random_bytes[3]:02x}-",
+        f"{random_bytes[4]:02x}{random_bytes[5]:02x}-",
+        f"{random_bytes[6]:02x}{random_bytes[7]:02x}-",
+        f"{random_bytes[8]:02x}{random_bytes[9]:02x}-",
+        f"{random_bytes[10]:02x}{random_bytes[11]:02x}{random_bytes[12]:02x}",
         f"{random_bytes[13]:02x}{random_bytes[14]:02x}{random_bytes[15]:02x}"
-    )
+    ])
 
     return uuid_str
 
